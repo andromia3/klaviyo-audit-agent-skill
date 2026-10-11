@@ -99,3 +99,26 @@ test('validator rejects personal-data fields', () => {
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test('focused evidence extremes retain complete scope and domain labels', () => {
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
+  const directory = mkdtempSync(join(tmpdir(), 'klaviyo-evidence-extremes-'))
+  const input = join(directory, 'audit.json')
+  try {
+    for (const status of ['pass', 'unverifiable']) {
+      const checks = fixture.checks.map(({ score, ...check }) => ({ ...check, status, confidence: 'high' }))
+      writeFileSync(input, JSON.stringify({ ...fixture, checks }))
+      const result = JSON.parse(execFileSync(process.execPath, [
+        resolve(root, 'klaviyo-agent-audit/scripts/score-audit.mjs'), input,
+      ], { encoding: 'utf8' }))
+      const expected = status === 'pass' ? 100 : 0
+      assert.equal(result.domain_maturity_score, expected)
+      assert.equal(result.audit_coverage_percent, expected)
+      assert.equal(result.evidence_confidence_percent, expected)
+      assert.equal(result.account_maturity_score, undefined)
+      assert.equal(result.maturity_label, status === 'pass' ? 'advanced' : 'directional')
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
