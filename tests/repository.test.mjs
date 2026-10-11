@@ -11,7 +11,7 @@ const skillPath = resolve(root, 'klaviyo-agent-audit/SKILL.md')
 const fixturePath = resolve(root, 'tests/fixtures/focused-audit.json')
 
 test('skill has portable required frontmatter', () => {
-  const skill = readFileSync(skillPath, 'utf8')
+  const skill = readFileSync(skillPath, 'utf8').replace(/\r\n/g, '\n')
   assert.match(skill, /^---\nname: klaviyo-agent-audit\n/m)
   assert.match(skill, /^description: .+/m)
   assert.match(skill, /^license: MIT$/m)
@@ -49,9 +49,35 @@ test('focused fixture validates and scores deterministically', () => {
     resolve(root, 'klaviyo-agent-audit/scripts/score-audit.mjs'),
     fixturePath,
   ], { encoding: 'utf8' }))
-  assert.equal(score.account_maturity_score, 100)
-  assert.equal(score.audit_coverage_percent, 100)
-  assert.equal(score.evidence_confidence_percent, 100)
+  assert.equal(score.domain_maturity_score, 100)
+  assert.equal(score.account_maturity_score, undefined)
+  assert.equal(score.audit_coverage_percent, 26.7)
+  assert.equal(score.evidence_confidence_percent, 26.7)
+  assert.equal(score.maturity_label, 'directional')
+})
+
+test('focused scope omissions and unknown dimensions cannot be scored', () => {
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
+  const directory = mkdtempSync(join(tmpdir(), 'klaviyo-focused-scope-'))
+  const input = join(directory, 'audit.json')
+  try {
+    for (const invalid of [
+      { ...fixture, checks: fixture.checks.slice(0, 1) },
+      { ...fixture, scope: { ...fixture.scope, focus_dimensions: ['data_measurement', 'unknown'] } },
+    ]) {
+      writeFileSync(input, JSON.stringify(invalid))
+      for (const script of ['validate-audit.mjs', 'score-audit.mjs']) {
+        const result = spawnSync(process.execPath, [
+          resolve(root, 'klaviyo-agent-audit/scripts', script), input,
+        ], { encoding: 'utf8' })
+        assert.notEqual(result.status, 0)
+        assert.match(result.stderr, /missing rubric check|unknown focus dimension/)
+        assert.equal(result.stdout, '')
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('validator rejects personal-data fields', () => {
